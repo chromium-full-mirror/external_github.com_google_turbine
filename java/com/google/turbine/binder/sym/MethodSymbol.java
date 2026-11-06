@@ -20,20 +20,45 @@ import com.google.errorprone.annotations.Immutable;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
-/** A method symbol. */
+/**
+ * A method symbol.
+ *
+ * <p>Methods aren't uniquely identified by their name and owner, so method symbols also have an
+ * identity within their owner, which depends on where the method was read from:
+ *
+ * <ul>
+ *   <li>Methods declared in source are identified by their index in the enclosing declaration.
+ *   <li>Methods read from class files are identified by their JVM descriptor.
+ * </ul>
+ *
+ * <p>Symbols of the two kinds are never equal. That matters if an annotation processor generates a
+ * source file for a type that is also on the classpath: methods of the classpath type that a
+ * processor obtained in an earlier round must not be confused with unrelated methods of the
+ * generated source that happen to have the same index.
+ */
 @Immutable
 public class MethodSymbol implements Symbol {
-  /**
-   * The index of the method in its enclosing element. Used to implement equals and hashCode, since
-   * methods aren't uniquely identified by their name and owner.
-   */
+  /** The index of the method in its enclosing declaration, for methods declared in source. */
   private final int idx;
+
+  /** The JVM descriptor of the method, for methods read from class files. */
+  private final @Nullable String descriptor;
 
   private final ClassSymbol owner;
   private final String name;
 
+  /** Creates a symbol for the method declared in source at the given index in its owner. */
   public MethodSymbol(int idx, ClassSymbol owner, String name) {
     this.idx = idx;
+    this.descriptor = null;
+    this.owner = owner;
+    this.name = name;
+  }
+
+  /** Creates a symbol for a method read from a class file, with the given JVM descriptor. */
+  public MethodSymbol(ClassSymbol owner, String name, String descriptor) {
+    this.idx = -1;
+    this.descriptor = descriptor;
     this.owner = owner;
     this.name = name;
   }
@@ -48,9 +73,16 @@ public class MethodSymbol implements Symbol {
     return name;
   }
 
+  /** The JVM descriptor, for methods read from class files, or {@code null}. */
+  public @Nullable String descriptor() {
+    return descriptor;
+  }
+
   @Override
   public int hashCode() {
-    return Objects.hash(name, owner, idx);
+    return descriptor == null
+        ? Objects.hash(name, owner, idx)
+        : Objects.hash(name, owner, descriptor);
   }
 
   @Override
@@ -63,7 +95,10 @@ public class MethodSymbol implements Symbol {
     if (!(obj instanceof MethodSymbol other)) {
       return false;
     }
-    return name().equals(other.name()) && owner().equals(other.owner()) && idx == other.idx;
+    return name().equals(other.name())
+        && owner().equals(other.owner())
+        && idx == other.idx
+        && Objects.equals(descriptor, other.descriptor);
   }
 
   @Override

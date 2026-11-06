@@ -16,6 +16,7 @@
 
 package com.google.turbine.processing;
 
+
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.turbine.binder.bound.SourceTypeBoundClass;
@@ -66,10 +67,7 @@ public class TurbineMessager implements Messager {
       printMessage(kind, msg);
       return;
     }
-    Symbol sym = ((TurbineElement) e).sym();
-    SourceFile source = getSource(sym);
-    int position = getPosition(sym);
-    log.withSource(source).diagnostic(kind, position, TurbineError.ErrorKind.PROC, msg);
+    printMessage(kind, msg, ((TurbineElement) e).sym(), /* anno= */ null, /* value= */ null);
   }
 
   @Override
@@ -78,9 +76,12 @@ public class TurbineMessager implements Messager {
       printMessage(kind, msg, e);
       return;
     }
-    SourceFile source = getSource(((TurbineElement) e).sym());
-    int position = ((TurbineAnnotationMirror) a).anno().tree().position();
-    log.withSource(source).diagnostic(kind, position, TurbineError.ErrorKind.PROC, msg);
+    printMessage(
+        kind,
+        msg,
+        ((TurbineElement) e).sym(),
+        ((TurbineAnnotationMirror) a).anno(),
+        /* value= */ null);
   }
 
   @Override
@@ -90,11 +91,40 @@ public class TurbineMessager implements Messager {
       printMessage(kind, msg, e, a);
       return;
     }
-    SourceFile source = getSource(((TurbineElement) e).sym());
-    AnnoInfo anno = ((TurbineAnnotationMirror) a).anno();
-    int position = locateInAnnotation(((TurbineAnnotationValueMirror) v).value(), anno);
-    if (position == -1) {
-      position = anno.tree().position();
+    printMessage(
+        kind,
+        msg,
+        ((TurbineElement) e).sym(),
+        ((TurbineAnnotationMirror) a).anno(),
+        ((TurbineAnnotationValueMirror) v).value());
+  }
+
+  /**
+   * Reports a diagnostic at the declaration of {@code sym}, or at {@code anno} or its element
+   * {@code value} if they are present. If {@code sym} is null, the diagnostic has no position.
+   */
+  public void printMessage(
+      Diagnostic.Kind kind,
+      CharSequence msg,
+      @Nullable Symbol sym,
+      @Nullable AnnoInfo anno,
+      @Nullable Const value) {
+    if (sym == null) {
+      printMessage(kind, msg);
+      return;
+    }
+    SourceFile source = getSource(sym);
+    int position;
+    if (anno == null) {
+      position = getPosition(sym);
+    } else if (anno.tree() == null) {
+      // An annotation that wasn't parsed from Java source, but may still have a position.
+      position = anno.position();
+    } else {
+      position = value != null ? locateInAnnotation(value, anno) : -1;
+      if (position == -1) {
+        position = anno.tree().position();
+      }
     }
     log.withSource(source).diagnostic(kind, position, TurbineError.ErrorKind.PROC, msg);
   }
@@ -166,7 +196,7 @@ public class TurbineMessager implements Messager {
     if (!(symbol instanceof SourceTypeBoundClass sourceTypeBoundClass)) {
       return -1;
     }
-    return sourceTypeBoundClass.decl().position();
+    return sourceTypeBoundClass.position();
   }
 
   private int tyParamPosition(TyVarSymbol sym) {
@@ -177,11 +207,11 @@ public class TurbineMessager implements Messager {
     switch (owner.symKind()) {
       case CLASS -> {
         TypeBoundClass cinfo = factory.getSymbol((ClassSymbol) owner);
-        if (!(cinfo instanceof SourceTypeBoundClass)) {
+        if (!(cinfo instanceof SourceTypeBoundClass source) || source.decl() == null) {
           return -1;
         }
         tyVars = cinfo.typeParameterTypes();
-        trees = ((SourceTypeBoundClass) cinfo).decl().typarams();
+        trees = source.decl().typarams();
       }
       case METHOD -> {
         MethodInfo minfo = factory.getMethodInfo((MethodSymbol) owner);

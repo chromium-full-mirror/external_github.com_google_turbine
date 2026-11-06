@@ -337,4 +337,65 @@ public class ClassWriterTest {
     assertThat(AsmUtils.textify(actualBytes, /* skipDebug= */ true))
         .isEqualTo(AsmUtils.textify(expectedBytes, /* skipDebug= */ true));
   }
+
+  @Test
+  public void accDeprecatedEmitsDeprecatedAttributeWithoutDuplicates() {
+    ClassFile.AnnotationInfo deprecatedAnno =
+        new ClassFile.AnnotationInfo(
+            "Ljava/lang/Deprecated;",
+            ClassFile.AnnotationInfo.RuntimeVisibility.VISIBLE,
+            ImmutableMap.of());
+    ClassFile classFile =
+        new ClassFile(
+            /* access= */ TurbineFlag.ACC_PUBLIC
+                | TurbineFlag.ACC_SUPER
+                | TurbineFlag.ACC_DEPRECATED,
+            /* majorVersion= */ 60,
+            /* minorVersion= */ 0,
+            /* name= */ "Dep",
+            /* signature= */ null,
+            /* superClass= */ "java/lang/Object",
+            /* interfaces= */ ImmutableList.of(),
+            /* permits= */ ImmutableList.of(),
+            /* methods= */ ImmutableList.of(
+                new ClassFile.MethodInfo(
+                    TurbineFlag.ACC_PUBLIC | TurbineFlag.ACC_DEPRECATED,
+                    "m",
+                    "()V",
+                    /* signature= */ null,
+                    /* exceptions= */ ImmutableList.of(),
+                    /* defaultValue= */ null,
+                    /* annotations= */ ImmutableList.of(deprecatedAnno),
+                    /* parameterAnnotations= */ ImmutableList.of(),
+                    /* typeAnnotations= */ ImmutableList.of(),
+                    /* parameters= */ ImmutableList.of())),
+            /* fields= */ ImmutableList.of(
+                new ClassFile.FieldInfo(
+                    TurbineFlag.ACC_PUBLIC | TurbineFlag.ACC_DEPRECATED,
+                    "f",
+                    "I",
+                    /* signature= */ null,
+                    /* value= */ null,
+                    /* annotations= */ ImmutableList.of(),
+                    /* typeAnnotations= */ ImmutableList.of())),
+            /* annotations= */ ImmutableList.of(),
+            /* innerClasses= */ ImmutableList.of(),
+            /* typeAnnotations= */ ImmutableList.of(),
+            /* module= */ null,
+            /* nestHost= */ null,
+            /* nestMembers= */ ImmutableList.of(),
+            /* record= */ null,
+            /* transitiveJar= */ null);
+
+    byte[] actualBytes = ClassWriter.writeClass(classFile);
+    var model = java.lang.classfile.ClassFile.of().parse(actualBytes);
+
+    assertThat(model.findAttributes(java.lang.classfile.Attributes.deprecated())).hasSize(1);
+    assertThat(
+            model.methods().getFirst().findAttributes(java.lang.classfile.Attributes.deprecated()))
+        .hasSize(1);
+    assertThat(
+            model.fields().getFirst().findAttributes(java.lang.classfile.Attributes.deprecated()))
+        .hasSize(1);
+  }
 }
